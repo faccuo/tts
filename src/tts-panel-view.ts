@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf, Notice, setIcon } from "obsidian";
 import type ElevenLabsTTSPlugin from "./main";
-import { VIEW_TYPE_TTS_PANEL, WordTiming, HistoryEntry } from "./types";
+import { VIEW_TYPE_TTS_PANEL, Voice, WordTiming, HistoryEntry } from "./types";
 
 export class TTSPanelView extends ItemView {
 	plugin: ElevenLabsTTSPlugin;
@@ -18,9 +18,11 @@ export class TTSPanelView extends ItemView {
 	private controlsEl!: HTMLElement;
 	private playBtn!: HTMLButtonElement;
 	private stopBtn!: HTMLButtonElement;
+	private changeVoiceBtn!: HTMLButtonElement;
 	private statusEl!: HTMLElement;
 	private historyContainerEl!: HTMLElement;
 	private currentEntryId: string | null = null;
+	private currentText: string | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ElevenLabsTTSPlugin) {
 		super(leaf);
@@ -62,6 +64,13 @@ export class TTSPanelView extends ItemView {
 		this.stopBtn.createSpan({ text: " Stop" });
 		this.stopBtn.addEventListener("click", () => this.stopPlayback());
 		this.stopBtn.disabled = true;
+
+		this.changeVoiceBtn = this.controlsEl.createEl("button", { cls: "tts-btn" });
+		setIcon(this.changeVoiceBtn, "repeat");
+		this.changeVoiceBtn.createSpan({ text: " Voice" });
+		this.changeVoiceBtn.title = "Regenerate with a different voice";
+		this.changeVoiceBtn.addEventListener("click", () => this.changeVoiceForCurrent());
+		this.changeVoiceBtn.disabled = true;
 
 		// Text display
 		this.textContainerEl = container.createEl("div", { cls: "tts-text-container" });
@@ -116,11 +125,17 @@ export class TTSPanelView extends ItemView {
 		this.textContainerEl.removeClass("tts-text-loading");
 		this.currentWordTimings = wordTimings;
 		this.currentEntryId = entryId;
+		this.currentText = text;
 
 		this.renderTextWithWords(text, wordTimings);
-		this.statusEl.setText(`Voice: ${this.plugin.settings.selectedVoiceName}`);
+
+		// Show voice name from the history entry if available, otherwise from settings
+		const entry = this.plugin.settings.history.find((h) => h.id === entryId);
+		const voiceName = entry ? entry.voiceName : this.plugin.settings.selectedVoiceName;
+		this.statusEl.setText(`Voice: ${voiceName}`);
 
 		await this.loadAudioFromVault(fileName);
+		this.changeVoiceBtn.disabled = false;
 		this.renderHistory();
 		this.play();
 	}
@@ -129,12 +144,14 @@ export class TTSPanelView extends ItemView {
 		this.stopPlayback();
 		this.currentWordTimings = entry.wordTimings;
 		this.currentEntryId = entry.id;
+		this.currentText = entry.text;
 
 		this.renderTextWithWords(entry.text, entry.wordTimings);
 		this.statusEl.setText(`Voice: ${entry.voiceName}`);
 
 		try {
 			await this.loadAudioFromVault(entry.fileName);
+			this.changeVoiceBtn.disabled = false;
 			this.play();
 		} catch {
 			new Notice("Audio file not found. It may have been deleted.");
@@ -280,6 +297,7 @@ export class TTSPanelView extends ItemView {
 		this.updatePlayButton();
 		this.playBtn.disabled = true;
 		this.stopBtn.disabled = true;
+		this.changeVoiceBtn.disabled = true;
 	}
 
 	private onPlaybackEnded(): void {
@@ -359,6 +377,68 @@ export class TTSPanelView extends ItemView {
 		this.currentActiveIndex = -1;
 	}
 
+	// ─── Change voice ───
+
+	private async changeVoiceForCurrent(): Promise<void> {
+		if (!this.currentEntryId) return;
+		const entry = this.plugin.settings.history.find((h) => h.id === this.currentEntryId);
+		if (!entry) return;
+		await this.changeVoiceForEntry(entry);
+	}
+
+	private async changeVoiceForEntry(entry: HistoryEntry): Promise<void> {
+		const voices = this.plugin.cachedVoices;
+		if (voices.length === 0) {
+			new Notice("No voices loaded. Validate your API key in settings first.");
+			return;
+		}
+
+		const selected = await this.showVoiceSelector(voices, entry.voiceId);
+		if (!selected || selected.voice_id === entry.voiceId) return;
+
+		await this.plugin.regenerateWithVoice(entry, selected.voice_id, selected.name);
+	}
+
+	private showVoiceSelector(voices: Voice[], currentVoiceId: string): Promise<Voice | null> {
+		return new Promise((resolve) => {
+			const overlay = document.body.createEl("div", { cls: "tts-confirm-overlay" });
+			const dialog = overlay.createEl("div", { cls: "tts-confirm-dialog tts-voice-selector" });
+
+			dialog.createEl("h3", { text: "Change voice" });
+			dialog.createEl("p", { text: "Select a new voice to regenerate this audio:" });
+
+			const listEl = dialog.createEl("div", { cls: "tts-voice-list" });
+
+			for (const voice of voices) {
+				const item = listEl.createEl("div", {
+					cls: "tts-voice-item" + (voice.voice_id === currentVoiceId ? " tts-voice-item-current" : ""),
+				});
+				item.createSpan({ text: voice.name });
+				if (voice.voice_id === currentVoiceId) {
+					item.createSpan({ cls: "tts-voice-badge", text: "current" });
+				}
+				item.addEventListener("click", () => {
+					overlay.remove();
+					resolve(voice);
+				});
+			}
+
+			const btnRow = dialog.createEl("div", { cls: "tts-confirm-buttons" });
+			const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
+			cancelBtn.addEventListener("click", () => {
+				overlay.remove();
+				resolve(null);
+			});
+
+			overlay.addEventListener("click", (e) => {
+				if (e.target === overlay) {
+					overlay.remove();
+					resolve(null);
+				}
+			});
+		});
+	}
+
 	// ─── History ───
 
 	private renderHistory(): void {
@@ -396,6 +476,14 @@ export class TTSPanelView extends ItemView {
 			replayBtn.addEventListener("click", (e) => {
 				e.stopPropagation();
 				this.replayFromHistory(entry);
+			});
+
+			const voiceBtn = actionsEl.createEl("button", { cls: "tts-btn-small" });
+			setIcon(voiceBtn, "repeat");
+			voiceBtn.title = "Change voice";
+			voiceBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.changeVoiceForEntry(entry);
 			});
 
 			const deleteBtn = actionsEl.createEl("button", { cls: "tts-btn-small tts-btn-danger-small" });
