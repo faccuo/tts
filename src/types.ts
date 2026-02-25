@@ -86,7 +86,7 @@ export interface ElevenLabsTTSSettings {
 	history: HistoryEntry[];
 	stylePreset: StylePresetName;
 	styleIntensity: number; // 0-100
-	speed: number; // 0.5-2.0
+	speed: number; // 0.7-1.2
 }
 
 export const DEFAULT_SETTINGS: ElevenLabsTTSSettings = {

@@ -86,8 +86,8 @@ export class TTSPanelView extends ItemView {
 		const speedRow = styleSection.createEl("div", { cls: "tts-slider-row" });
 		speedRow.createEl("span", { cls: "tts-slider-label", text: "Speed" });
 		this.speedSlider = speedRow.createEl("input", { type: "range" });
-		this.speedSlider.min = "0.5";
-		this.speedSlider.max = "2.0";
+		this.speedSlider.min = "0.7";
+		this.speedSlider.max = "1.2";
 		this.speedSlider.step = "0.05";
 		this.speedSlider.value = String(this.plugin.settings.speed);
 		this.speedSlider.classList.add("tts-slider");
