@@ -1,0 +1,262 @@
+/* ─── TTS Panel ─── */
+
+.tts-panel {
+	padding: 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	height: 100%;
+	overflow-y: auto;
+}
+
+/* ─── Status ─── */
+
+.tts-status {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	padding: 4px 0;
+}
+
+/* ─── Controls ─── */
+
+.tts-controls {
+	display: flex;
+	gap: 8px;
+}
+
+.tts-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 6px 12px;
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--interactive-normal);
+	color: var(--text-normal);
+	transition: background 0.15s ease;
+}
+
+.tts-btn:hover:not(:disabled) {
+	background: var(--interactive-hover);
+}
+
+.tts-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+.tts-btn-play {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.tts-btn-play:hover:not(:disabled) {
+	background: var(--interactive-accent-hover);
+}
+
+.tts-btn-danger {
+	color: var(--text-error);
+}
+
+.tts-btn-danger:hover:not(:disabled) {
+	background: var(--background-modifier-error);
+	color: var(--text-on-accent);
+}
+
+/* ─── Text container ─── */
+
+.tts-text-container {
+	background: var(--background-secondary);
+	border-radius: var(--radius-m);
+	padding: 16px;
+	line-height: 1.8;
+	font-size: var(--font-text-size);
+	max-height: 300px;
+	overflow-y: auto;
+	min-height: 60px;
+}
+
+.tts-word {
+	cursor: pointer;
+	padding: 1px 2px;
+	border-radius: var(--radius-s);
+	transition: background-color 0.1s ease;
+}
+
+.tts-word:hover {
+	background: var(--background-modifier-hover);
+}
+
+.tts-word-active {
+	background: var(--text-highlight-bg) !important;
+	color: var(--text-normal);
+	border-radius: var(--radius-s);
+}
+
+/* ─── History ─── */
+
+.tts-history-section {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-height: 0;
+}
+
+.tts-history-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.tts-history-header h4 {
+	margin: 0;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.tts-history-list {
+	flex: 1;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.tts-history-empty {
+	color: var(--text-faint);
+	font-size: var(--font-ui-small);
+	text-align: center;
+	padding: 20px;
+}
+
+.tts-history-item {
+	background: var(--background-secondary);
+	border-radius: var(--radius-s);
+	padding: 10px 12px;
+	border: 1px solid transparent;
+	transition: border-color 0.15s ease;
+}
+
+.tts-history-item:hover {
+	border-color: var(--background-modifier-border);
+}
+
+.tts-history-item-active {
+	border-color: var(--interactive-accent);
+}
+
+.tts-history-text {
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+	margin-bottom: 4px;
+	line-height: 1.4;
+	word-break: break-word;
+}
+
+.tts-history-meta {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	margin-bottom: 6px;
+}
+
+.tts-history-actions {
+	display: flex;
+	gap: 4px;
+}
+
+.tts-btn-small {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--interactive-normal);
+	color: var(--text-muted);
+	transition: all 0.15s ease;
+}
+
+.tts-btn-small:hover {
+	background: var(--interactive-hover);
+	color: var(--text-normal);
+}
+
+.tts-btn-danger-small:hover {
+	background: var(--background-modifier-error);
+	color: var(--text-on-accent);
+}
+
+/* ─── Confirm dialog ─── */
+
+.tts-confirm-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.5);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 9999;
+}
+
+.tts-confirm-dialog {
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-l);
+	padding: 24px;
+	max-width: 400px;
+	width: 90%;
+	box-shadow: var(--shadow-l);
+}
+
+.tts-confirm-dialog h3 {
+	margin: 0 0 12px 0;
+}
+
+.tts-confirm-dialog p {
+	margin: 0 0 20px 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	white-space: pre-line;
+}
+
+.tts-confirm-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.tts-confirm-buttons button {
+	padding: 6px 16px;
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--interactive-normal);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+.tts-confirm-buttons button:hover {
+	background: var(--interactive-hover);
+}
+
+.tts-confirm-buttons button.mod-warning {
+	background: var(--background-modifier-error);
+	color: var(--text-on-accent);
+	border-color: var(--background-modifier-error);
+}
+
+.tts-confirm-buttons button.mod-warning:hover {
+	opacity: 0.9;
+}
