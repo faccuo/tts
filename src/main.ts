@@ -58,6 +58,8 @@ export default class ElevenLabsTTSPlugin extends Plugin {
 		if (!Array.isArray(this.settings.history)) {
 			this.settings.history = [];
 		}
+		// Clamp speed to ElevenLabs API range (0.7-1.2)
+		this.settings.speed = Math.min(1.2, Math.max(0.7, this.settings.speed));
 	}
 
 	async saveSettings(): Promise<void> {

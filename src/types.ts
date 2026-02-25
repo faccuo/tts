@@ -112,7 +112,7 @@ export function computeVoiceSettings(preset: StylePresetName, intensity: number,
 		stability: lerp(neutral.stability, target.stability, t),
 		similarity_boost: lerp(neutral.similarity_boost, target.similarity_boost, t),
 		style: lerp(neutral.style, target.style, t),
-		speed,
+		speed: Math.min(1.2, Math.max(0.7, speed)),
 		use_speaker_boost: true,
 	};
 }
