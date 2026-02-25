@@ -1,5 +1,5 @@
 import { requestUrl } from "obsidian";
-import { Voice, AudioWithTimestampsResponse, WordTiming, CharacterAlignment } from "./types";
+import { Voice, VoiceSettings, AudioWithTimestampsResponse, WordTiming, CharacterAlignment } from "./types";
 
 const BASE_URL = "https://api.elevenlabs.io";
 
@@ -47,9 +47,25 @@ export async function fetchVoices(apiKey: string): Promise<Voice[]> {
 export async function generateSpeechWithTimestamps(
 	apiKey: string,
 	voiceId: string,
-	text: string
+	text: string,
+	voiceSettings?: VoiceSettings
 ): Promise<{ audioBuffer: ArrayBuffer; wordTimings: WordTiming[] }> {
 	const url = `${BASE_URL}/v1/text-to-speech/${voiceId}/with-timestamps?output_format=mp3_44100_128`;
+
+	const body: Record<string, unknown> = {
+		text,
+		model_id: "eleven_multilingual_v2",
+	};
+
+	if (voiceSettings) {
+		body.voice_settings = {
+			stability: voiceSettings.stability,
+			similarity_boost: voiceSettings.similarity_boost,
+			style: voiceSettings.style,
+			speed: voiceSettings.speed,
+			use_speaker_boost: voiceSettings.use_speaker_boost,
+		};
+	}
 
 	const response = await requestUrl({
 		url,
@@ -58,10 +74,7 @@ export async function generateSpeechWithTimestamps(
 			"Content-Type": "application/json",
 			"xi-api-key": apiKey,
 		},
-		body: JSON.stringify({
-			text,
-			model_id: "eleven_multilingual_v2",
-		}),
+		body: JSON.stringify(body),
 	});
 
 	if (response.status !== 200) {

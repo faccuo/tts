@@ -1,5 +1,5 @@
 import { Editor, MarkdownView, Notice, Plugin } from "obsidian";
-import { DEFAULT_SETTINGS, ElevenLabsTTSSettings, HistoryEntry, VIEW_TYPE_TTS_PANEL, Voice } from "./types";
+import { DEFAULT_SETTINGS, ElevenLabsTTSSettings, HistoryEntry, VIEW_TYPE_TTS_PANEL, Voice, computeVoiceSettings } from "./types";
 import { ElevenLabsTTSSettingTab } from "./settings";
 import { TTSPanelView } from "./tts-panel-view";
 import { generateSpeechWithTimestamps } from "./elevenlabs-api";
@@ -55,7 +55,6 @@ export default class ElevenLabsTTSPlugin extends Plugin {
 
 	async loadSettings(): Promise<void> {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<ElevenLabsTTSSettings>);
-		// Ensure history is always an array
 		if (!Array.isArray(this.settings.history)) {
 			this.settings.history = [];
 		}
@@ -65,49 +64,52 @@ export default class ElevenLabsTTSPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
+	private getVoiceSettings() {
+		return computeVoiceSettings(
+			this.settings.stylePreset,
+			this.settings.styleIntensity,
+			this.settings.speed
+		);
+	}
+
 	// ─── Core TTS flow ───
 
 	private async handleTTSCommand(text: string): Promise<void> {
-		// Validate config
 		if (!this.settings.apiKey) {
 			new Notice("Please set your ElevenLabs API key in plugin settings.");
 			return;
 		}
 		if (!this.settings.selectedVoiceId) {
-			new Notice("Please select a voice in plugin settings.");
+			new Notice("Please select a voice in the TTS panel.");
 			return;
 		}
 
-		// Open/activate panel
 		const panel = await this.activatePanel();
 		if (!panel) {
 			new Notice("Could not open TTS panel.");
 			return;
 		}
 
-		// Show loading state in panel
 		panel.showGenerating(text, this.settings.selectedVoiceName);
 
 		try {
-			// Call ElevenLabs API
+			const voiceSettings = this.getVoiceSettings();
 			const { audioBuffer, wordTimings } = await generateSpeechWithTimestamps(
 				this.settings.apiKey,
 				this.settings.selectedVoiceId,
-				text
+				text,
+				voiceSettings
 			);
 
-			// Ensure output folder exists
 			const folder = this.settings.outputFolder;
 			if (!await this.app.vault.adapter.exists(folder)) {
 				await this.app.vault.createFolder(folder);
 			}
 
-			// Save audio file
 			const timestamp = Date.now();
 			const fileName = `${folder}/tts-${timestamp}.mp3`;
 			await this.app.vault.createBinary(fileName, audioBuffer);
 
-			// Create history entry
 			const entryId = `tts-${timestamp}`;
 			const entry = {
 				id: entryId,
@@ -122,7 +124,6 @@ export default class ElevenLabsTTSPlugin extends Plugin {
 			this.settings.history.push(entry);
 			await this.saveSettings();
 
-			// Load and play in panel
 			await panel.loadAndPlay(text, wordTimings, fileName, entryId);
 
 			new Notice("Speech generated successfully.");
@@ -148,17 +149,17 @@ export default class ElevenLabsTTSPlugin extends Plugin {
 			return;
 		}
 
-		// Show loading state
 		panel.showGenerating(entry.text, newVoiceName);
 
 		try {
+			const voiceSettings = this.getVoiceSettings();
 			const { audioBuffer, wordTimings } = await generateSpeechWithTimestamps(
 				this.settings.apiKey,
 				newVoiceId,
-				entry.text
+				entry.text,
+				voiceSettings
 			);
 
-			// Delete old audio file
 			try {
 				const oldFile = this.app.vault.getFileByPath(entry.fileName);
 				if (oldFile) {
@@ -168,18 +169,15 @@ export default class ElevenLabsTTSPlugin extends Plugin {
 				// Old file may already be gone
 			}
 
-			// Ensure output folder exists
 			const folder = this.settings.outputFolder;
 			if (!await this.app.vault.adapter.exists(folder)) {
 				await this.app.vault.createFolder(folder);
 			}
 
-			// Save new audio file
 			const timestamp = Date.now();
 			const fileName = `${folder}/tts-${timestamp}.mp3`;
 			await this.app.vault.createBinary(fileName, audioBuffer);
 
-			// Update history entry in place
 			const idx = this.settings.history.findIndex((h) => h.id === entry.id);
 			if (idx >= 0) {
 				this.settings.history[idx] = {
@@ -193,7 +191,6 @@ export default class ElevenLabsTTSPlugin extends Plugin {
 			}
 			await this.saveSettings();
 
-			// Play the new version
 			await panel.loadAndPlay(entry.text, wordTimings, fileName, entry.id);
 
 			new Notice(`Regenerated with ${newVoiceName}.`);

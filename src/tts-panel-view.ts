@@ -1,11 +1,12 @@
 import { ItemView, WorkspaceLeaf, Notice, setIcon } from "obsidian";
 import type ElevenLabsTTSPlugin from "./main";
-import { VIEW_TYPE_TTS_PANEL, Voice, WordTiming, HistoryEntry } from "./types";
+import { VIEW_TYPE_TTS_PANEL, WordTiming, HistoryEntry, STYLE_PRESETS, StylePresetName } from "./types";
+import { fetchVoices } from "./elevenlabs-api";
 
 export class TTSPanelView extends ItemView {
 	plugin: ElevenLabsTTSPlugin;
 
-	// Current playback state
+	// Playback state
 	private audioEl: HTMLAudioElement | null = null;
 	private animationFrameId: number | null = null;
 	private wordSpans: HTMLSpanElement[] = [];
@@ -13,44 +14,91 @@ export class TTSPanelView extends ItemView {
 	private currentActiveIndex = -1;
 	private isPlaying = false;
 
-	// DOM references
+	// DOM refs
+	private voiceSelectEl!: HTMLSelectElement;
+	private presetRadios: Map<string, HTMLInputElement> = new Map();
+	private intensitySlider!: HTMLInputElement;
+	private intensityValue!: HTMLSpanElement;
+	private speedSlider!: HTMLInputElement;
+	private speedValue!: HTMLSpanElement;
 	private textContainerEl!: HTMLElement;
 	private controlsEl!: HTMLElement;
 	private playBtn!: HTMLButtonElement;
 	private stopBtn!: HTMLButtonElement;
-	private changeVoiceBtn!: HTMLButtonElement;
+	private regenerateBtn!: HTMLButtonElement;
 	private statusEl!: HTMLElement;
 	private historyContainerEl!: HTMLElement;
 	private currentEntryId: string | null = null;
-	private currentText: string | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ElevenLabsTTSPlugin) {
 		super(leaf);
 		this.plugin = plugin;
 	}
 
-	getViewType(): string {
-		return VIEW_TYPE_TTS_PANEL;
-	}
-
-	getDisplayText(): string {
-		return "ElevenLabs TTS";
-	}
-
-	getIcon(): string {
-		return "audio-lines";
-	}
+	getViewType(): string { return VIEW_TYPE_TTS_PANEL; }
+	getDisplayText(): string { return "ElevenLabs TTS"; }
+	getIcon(): string { return "audio-lines"; }
 
 	async onOpen(): Promise<void> {
 		const container = this.containerEl.children[1] as HTMLElement;
 		container.empty();
 		container.addClass("tts-panel");
 
-		// Status
-		this.statusEl = container.createEl("div", { cls: "tts-status" });
-		this.statusEl.setText("Select text and run the TTS command to begin.");
+		// ── Voice selector ──
+		const voiceRow = container.createEl("div", { cls: "tts-voice-row" });
+		voiceRow.createEl("span", { cls: "tts-label", text: "Voice" });
+		this.voiceSelectEl = voiceRow.createEl("select", { cls: "tts-voice-select" });
+		this.voiceSelectEl.addEventListener("change", () => this.onVoiceChanged());
 
-		// Controls
+		// ── Style presets ──
+		const styleSection = container.createEl("div", { cls: "tts-style-section" });
+		styleSection.createEl("span", { cls: "tts-label", text: "Style" });
+
+		const presetGroup = styleSection.createEl("div", { cls: "tts-preset-group" });
+		const presetNames = Object.keys(STYLE_PRESETS) as StylePresetName[];
+		for (const name of presetNames) {
+			const preset = STYLE_PRESETS[name];
+			const label = presetGroup.createEl("label", { cls: "tts-preset-option" });
+			const radio = label.createEl("input", { type: "radio" });
+			radio.name = "tts-style-preset";
+			radio.value = name;
+			radio.checked = name === this.plugin.settings.stylePreset;
+			radio.addEventListener("change", () => this.onPresetChanged(name));
+			this.presetRadios.set(name, radio);
+			const textWrap = label.createEl("span", { cls: "tts-preset-text" });
+			textWrap.createEl("span", { cls: "tts-preset-name", text: preset.label });
+			textWrap.createEl("span", { cls: "tts-preset-desc", text: preset.description });
+		}
+
+		// ── Intensity slider ──
+		const intensityRow = styleSection.createEl("div", { cls: "tts-slider-row" });
+		intensityRow.createEl("span", { cls: "tts-slider-label", text: "Intensity" });
+		this.intensitySlider = intensityRow.createEl("input", { type: "range" });
+		this.intensitySlider.min = "0";
+		this.intensitySlider.max = "100";
+		this.intensitySlider.step = "5";
+		this.intensitySlider.value = String(this.plugin.settings.styleIntensity);
+		this.intensitySlider.classList.add("tts-slider");
+		this.intensityValue = intensityRow.createEl("span", { cls: "tts-slider-val", text: `${this.plugin.settings.styleIntensity}%` });
+		this.intensitySlider.addEventListener("input", () => this.onIntensityChanged());
+
+		// ── Speed slider ──
+		const speedRow = styleSection.createEl("div", { cls: "tts-slider-row" });
+		speedRow.createEl("span", { cls: "tts-slider-label", text: "Speed" });
+		this.speedSlider = speedRow.createEl("input", { type: "range" });
+		this.speedSlider.min = "0.5";
+		this.speedSlider.max = "2.0";
+		this.speedSlider.step = "0.05";
+		this.speedSlider.value = String(this.plugin.settings.speed);
+		this.speedSlider.classList.add("tts-slider");
+		this.speedValue = speedRow.createEl("span", { cls: "tts-slider-val", text: `${this.plugin.settings.speed.toFixed(2)}x` });
+		this.speedSlider.addEventListener("input", () => this.onSpeedChanged());
+
+		// ── Status ──
+		this.statusEl = container.createEl("div", { cls: "tts-status" });
+		this.statusEl.setText("Select text and use Cmd+Shift+G to generate.");
+
+		// ── Controls ──
 		this.controlsEl = container.createEl("div", { cls: "tts-controls" });
 
 		this.playBtn = this.controlsEl.createEl("button", { cls: "tts-btn tts-btn-play" });
@@ -65,19 +113,18 @@ export class TTSPanelView extends ItemView {
 		this.stopBtn.addEventListener("click", () => this.stopPlayback());
 		this.stopBtn.disabled = true;
 
-		this.changeVoiceBtn = this.controlsEl.createEl("button", { cls: "tts-btn" });
-		setIcon(this.changeVoiceBtn, "repeat");
-		this.changeVoiceBtn.createSpan({ text: " Voice" });
-		this.changeVoiceBtn.title = "Regenerate with a different voice";
-		this.changeVoiceBtn.addEventListener("click", () => this.changeVoiceForCurrent());
-		this.changeVoiceBtn.disabled = true;
+		this.regenerateBtn = this.controlsEl.createEl("button", { cls: "tts-btn" });
+		setIcon(this.regenerateBtn, "refresh-cw");
+		this.regenerateBtn.createSpan({ text: " Regen" });
+		this.regenerateBtn.title = "Regenerate with the selected voice and style";
+		this.regenerateBtn.addEventListener("click", () => this.regenerateCurrent());
+		this.regenerateBtn.disabled = true;
 
-		// Text display
+		// ── Text display ──
 		this.textContainerEl = container.createEl("div", { cls: "tts-text-container" });
 
-		// History section
+		// ── History ──
 		const historySectionEl = container.createEl("div", { cls: "tts-history-section" });
-
 		const historyHeader = historySectionEl.createEl("div", { cls: "tts-history-header" });
 		historyHeader.createEl("h4", { text: "History" });
 
@@ -87,37 +134,118 @@ export class TTSPanelView extends ItemView {
 		clearBtn.addEventListener("click", () => this.clearAllHistory());
 
 		this.historyContainerEl = historySectionEl.createEl("div", { cls: "tts-history-list" });
-
 		this.renderHistory();
+
+		// Auto-load voices
+		await this.ensureVoicesLoaded();
 	}
 
 	async onClose(): Promise<void> {
 		this.stopPlayback();
 	}
 
-	// ─── Public API called from main.ts ───
+	// ─── Voice combo ───
+
+	private async ensureVoicesLoaded(): Promise<void> {
+		if (this.plugin.cachedVoices.length > 0) {
+			this.populateVoiceSelect();
+			return;
+		}
+		const apiKey = this.plugin.settings.apiKey;
+		if (!apiKey) {
+			this.voiceSelectEl.innerHTML = "";
+			const opt = this.voiceSelectEl.createEl("option", { value: "", text: "Set API key in settings" });
+			opt.disabled = true;
+			return;
+		}
+		this.voiceSelectEl.innerHTML = "";
+		this.voiceSelectEl.createEl("option", { value: "", text: "Loading voices..." });
+		this.voiceSelectEl.disabled = true;
+		try {
+			this.plugin.cachedVoices = await fetchVoices(apiKey);
+			this.populateVoiceSelect();
+		} catch (e) {
+			this.voiceSelectEl.innerHTML = "";
+			this.voiceSelectEl.createEl("option", { value: "", text: "Failed to load voices" });
+			console.error("Failed to auto-load voices:", e);
+		} finally {
+			this.voiceSelectEl.disabled = false;
+		}
+	}
+
+	private populateVoiceSelect(): void {
+		this.voiceSelectEl.innerHTML = "";
+		if (this.plugin.cachedVoices.length === 0) {
+			this.voiceSelectEl.createEl("option", { value: "", text: "No voices available" });
+			return;
+		}
+		for (const voice of this.plugin.cachedVoices) {
+			this.voiceSelectEl.createEl("option", { value: voice.voice_id, text: voice.name });
+		}
+		if (this.plugin.settings.selectedVoiceId) {
+			this.voiceSelectEl.value = this.plugin.settings.selectedVoiceId;
+		}
+		if (!this.voiceSelectEl.value && this.plugin.cachedVoices.length > 0) {
+			this.voiceSelectEl.value = this.plugin.cachedVoices[0]!.voice_id;
+			this.onVoiceChanged();
+		}
+	}
+
+	private async onVoiceChanged(): Promise<void> {
+		const voiceId = this.voiceSelectEl.value;
+		const voice = this.plugin.cachedVoices.find((v) => v.voice_id === voiceId);
+		if (voice) {
+			this.plugin.settings.selectedVoiceId = voice.voice_id;
+			this.plugin.settings.selectedVoiceName = voice.name;
+			await this.plugin.saveSettings();
+		}
+	}
+
+	refreshVoices(): void {
+		this.populateVoiceSelect();
+	}
+
+	// ─── Style settings ───
+
+	private async onPresetChanged(name: StylePresetName): Promise<void> {
+		this.plugin.settings.stylePreset = name;
+		await this.plugin.saveSettings();
+	}
+
+	private async onIntensityChanged(): Promise<void> {
+		const val = parseInt(this.intensitySlider.value);
+		this.plugin.settings.styleIntensity = val;
+		this.intensityValue.setText(`${val}%`);
+		await this.plugin.saveSettings();
+	}
+
+	private async onSpeedChanged(): Promise<void> {
+		const val = parseFloat(this.speedSlider.value);
+		this.plugin.settings.speed = val;
+		this.speedValue.setText(`${val.toFixed(2)}x`);
+		await this.plugin.saveSettings();
+	}
+
+	// ─── Public API ───
 
 	showGenerating(text: string, voiceName: string): void {
 		this.stopPlayback();
 		this.textContainerEl.empty();
 		this.textContainerEl.addClass("tts-text-loading");
-
-		// Show text with newlines preserved but dimmed
 		this.renderPlainText(text, this.textContainerEl);
-
-		// Loading indicator
 		this.statusEl.empty();
 		const indicator = this.statusEl.createEl("span", { cls: "tts-loading-indicator" });
 		indicator.setText(`Generating with ${voiceName}`);
-
 		this.playBtn.disabled = true;
 		this.stopBtn.disabled = true;
+		this.regenerateBtn.disabled = true;
 	}
 
 	showError(message: string): void {
 		this.textContainerEl.removeClass("tts-text-loading");
 		this.statusEl.empty();
 		this.statusEl.createEl("span", { cls: "tts-status-error", text: message });
+		this.regenerateBtn.disabled = false;
 	}
 
 	async loadAndPlay(text: string, wordTimings: WordTiming[], fileName: string, entryId: string): Promise<void> {
@@ -125,17 +253,12 @@ export class TTSPanelView extends ItemView {
 		this.textContainerEl.removeClass("tts-text-loading");
 		this.currentWordTimings = wordTimings;
 		this.currentEntryId = entryId;
-		this.currentText = text;
-
 		this.renderTextWithWords(text, wordTimings);
-
-		// Show voice name from the history entry if available, otherwise from settings
 		const entry = this.plugin.settings.history.find((h) => h.id === entryId);
 		const voiceName = entry ? entry.voiceName : this.plugin.settings.selectedVoiceName;
-		this.statusEl.setText(`Voice: ${voiceName}`);
-
+		this.statusEl.setText(`Generated with: ${voiceName}`);
 		await this.loadAudioFromVault(fileName);
-		this.changeVoiceBtn.disabled = false;
+		this.regenerateBtn.disabled = false;
 		this.renderHistory();
 		this.play();
 	}
@@ -144,18 +267,34 @@ export class TTSPanelView extends ItemView {
 		this.stopPlayback();
 		this.currentWordTimings = entry.wordTimings;
 		this.currentEntryId = entry.id;
-		this.currentText = entry.text;
-
 		this.renderTextWithWords(entry.text, entry.wordTimings);
-		this.statusEl.setText(`Voice: ${entry.voiceName}`);
-
+		this.statusEl.setText(`Generated with: ${entry.voiceName}`);
 		try {
 			await this.loadAudioFromVault(entry.fileName);
-			this.changeVoiceBtn.disabled = false;
+			this.regenerateBtn.disabled = false;
 			this.play();
 		} catch {
 			new Notice("Audio file not found. It may have been deleted.");
 		}
+	}
+
+	// ─── Regenerate ───
+
+	private async regenerateCurrent(): Promise<void> {
+		if (!this.currentEntryId) return;
+		const entry = this.plugin.settings.history.find((h) => h.id === this.currentEntryId);
+		if (!entry) return;
+		const voiceId = this.plugin.settings.selectedVoiceId;
+		const voiceName = this.plugin.settings.selectedVoiceName;
+		if (!voiceId) { new Notice("Select a voice first."); return; }
+		await this.plugin.regenerateWithVoice(entry, voiceId, voiceName);
+	}
+
+	private async regenerateEntry(entry: HistoryEntry): Promise<void> {
+		const voiceId = this.plugin.settings.selectedVoiceId;
+		const voiceName = this.plugin.settings.selectedVoiceName;
+		if (!voiceId) { new Notice("Select a voice first."); return; }
+		await this.plugin.regenerateWithVoice(entry, voiceId, voiceName);
 	}
 
 	// ─── Render text ───
@@ -163,101 +302,66 @@ export class TTSPanelView extends ItemView {
 	private renderPlainText(text: string, container: HTMLElement): void {
 		const parts = text.split("\n");
 		for (let i = 0; i < parts.length; i++) {
-			if (i > 0) {
-				container.createEl("br");
-			}
+			if (i > 0) container.createEl("br");
 			const line = parts[i]!;
-			if (line.length > 0) {
-				container.appendText(line);
-			}
+			if (line.length > 0) container.appendText(line);
 		}
 	}
 
 	private appendTextWithBreaks(text: string, container: HTMLElement): void {
 		const parts = text.split("\n");
 		for (let i = 0; i < parts.length; i++) {
-			if (i > 0) {
-				container.createEl("br");
-			}
+			if (i > 0) container.createEl("br");
 			const line = parts[i]!;
-			if (line.length > 0) {
-				container.appendText(line);
-			}
+			if (line.length > 0) container.appendText(line);
 		}
 	}
 
 	private renderTextWithWords(text: string, wordTimings: WordTiming[]): void {
 		this.textContainerEl.empty();
 		this.wordSpans = [];
-
 		if (wordTimings.length === 0) {
 			this.renderPlainText(text, this.textContainerEl);
 			return;
 		}
-
 		let lastEnd = 0;
 		for (let i = 0; i < wordTimings.length; i++) {
 			const wt = wordTimings[i]!;
-
-			// Add spaces/punctuation/newlines between words
 			if (wt.startIndex > lastEnd) {
-				const between = text.substring(lastEnd, wt.startIndex);
-				this.appendTextWithBreaks(between, this.textContainerEl);
+				this.appendTextWithBreaks(text.substring(lastEnd, wt.startIndex), this.textContainerEl);
 			}
-
-			const span = this.textContainerEl.createEl("span", {
-				cls: "tts-word",
-				text: wt.word,
-			});
-
+			const span = this.textContainerEl.createEl("span", { cls: "tts-word", text: wt.word });
 			const timing = wt;
 			span.addEventListener("click", () => {
 				if (this.audioEl) {
 					this.audioEl.currentTime = timing.startTime;
-					if (!this.isPlaying) {
-						this.play();
-					}
+					if (!this.isPlaying) this.play();
 				}
 			});
-
 			this.wordSpans.push(span);
 			lastEnd = wt.endIndex;
 		}
-
-		// Trailing text
 		if (lastEnd < text.length) {
-			const trailing = text.substring(lastEnd);
-			this.appendTextWithBreaks(trailing, this.textContainerEl);
+			this.appendTextWithBreaks(text.substring(lastEnd), this.textContainerEl);
 		}
 	}
 
-	// ─── Audio loading ───
+	// ─── Audio ───
 
 	private async loadAudioFromVault(fileName: string): Promise<void> {
 		const file = this.app.vault.getFileByPath(fileName);
-		if (!file) {
-			throw new Error(`File not found: ${fileName}`);
-		}
-
+		if (!file) throw new Error(`File not found: ${fileName}`);
 		const arrayBuffer = await this.app.vault.readBinary(file);
 		const blob = new Blob([arrayBuffer], { type: "audio/mpeg" });
 		const url = URL.createObjectURL(blob);
-
-		if (this.audioEl) {
-			URL.revokeObjectURL(this.audioEl.src);
-			this.audioEl.remove();
-		}
-
+		if (this.audioEl) { URL.revokeObjectURL(this.audioEl.src); this.audioEl.remove(); }
 		this.audioEl = new Audio(url);
-		this.audioEl.addEventListener("ended", () => {
-			this.onPlaybackEnded();
-		});
-
+		this.audioEl.addEventListener("ended", () => this.onPlaybackEnded());
 		this.playBtn.disabled = false;
 		this.stopBtn.disabled = false;
 	}
 
-	// ─── Playback controls ───
+	// ─── Playback ───
 
 	private play(): void {
 		if (!this.audioEl) return;
@@ -276,11 +380,7 @@ export class TTSPanelView extends ItemView {
 	}
 
 	private togglePlayPause(): void {
-		if (this.isPlaying) {
-			this.pause();
-		} else {
-			this.play();
-		}
+		if (this.isPlaying) this.pause(); else this.play();
 	}
 
 	private stopPlayback(): void {
@@ -297,7 +397,6 @@ export class TTSPanelView extends ItemView {
 		this.updatePlayButton();
 		this.playBtn.disabled = true;
 		this.stopBtn.disabled = true;
-		this.changeVoiceBtn.disabled = true;
 	}
 
 	private onPlaybackEnded(): void {
@@ -317,7 +416,7 @@ export class TTSPanelView extends ItemView {
 		}
 	}
 
-	// ─── Highlight loop ───
+	// ─── Highlight ───
 
 	private startHighlightLoop(): void {
 		this.stopHighlightLoop();
@@ -338,28 +437,17 @@ export class TTSPanelView extends ItemView {
 	private updateHighlight(): void {
 		if (!this.audioEl || this.wordSpans.length === 0) return;
 		const currentTime = this.audioEl.currentTime;
-
 		let activeIndex = -1;
 		for (let i = 0; i < this.currentWordTimings.length; i++) {
 			const wt = this.currentWordTimings[i]!;
-			if (currentTime >= wt.startTime && currentTime < wt.endTime) {
-				activeIndex = i;
-				break;
-			}
+			if (currentTime >= wt.startTime && currentTime < wt.endTime) { activeIndex = i; break; }
 		}
-
-		// If between words, find the next upcoming word
 		if (activeIndex === -1) {
 			for (let i = 0; i < this.currentWordTimings.length; i++) {
 				const wt = this.currentWordTimings[i]!;
-				if (currentTime < wt.startTime) {
-					// Keep highlighting the previous word
-					activeIndex = i > 0 ? i - 1 : -1;
-					break;
-				}
+				if (currentTime < wt.startTime) { activeIndex = i > 0 ? i - 1 : -1; break; }
 			}
 		}
-
 		if (activeIndex !== this.currentActiveIndex) {
 			this.clearHighlight();
 			if (activeIndex >= 0 && activeIndex < this.wordSpans.length) {
@@ -371,72 +459,8 @@ export class TTSPanelView extends ItemView {
 	}
 
 	private clearHighlight(): void {
-		for (const span of this.wordSpans) {
-			span.removeClass("tts-word-active");
-		}
+		for (const span of this.wordSpans) span.removeClass("tts-word-active");
 		this.currentActiveIndex = -1;
-	}
-
-	// ─── Change voice ───
-
-	private async changeVoiceForCurrent(): Promise<void> {
-		if (!this.currentEntryId) return;
-		const entry = this.plugin.settings.history.find((h) => h.id === this.currentEntryId);
-		if (!entry) return;
-		await this.changeVoiceForEntry(entry);
-	}
-
-	private async changeVoiceForEntry(entry: HistoryEntry): Promise<void> {
-		const voices = this.plugin.cachedVoices;
-		if (voices.length === 0) {
-			new Notice("No voices loaded. Validate your API key in settings first.");
-			return;
-		}
-
-		const selected = await this.showVoiceSelector(voices, entry.voiceId);
-		if (!selected || selected.voice_id === entry.voiceId) return;
-
-		await this.plugin.regenerateWithVoice(entry, selected.voice_id, selected.name);
-	}
-
-	private showVoiceSelector(voices: Voice[], currentVoiceId: string): Promise<Voice | null> {
-		return new Promise((resolve) => {
-			const overlay = document.body.createEl("div", { cls: "tts-confirm-overlay" });
-			const dialog = overlay.createEl("div", { cls: "tts-confirm-dialog tts-voice-selector" });
-
-			dialog.createEl("h3", { text: "Change voice" });
-			dialog.createEl("p", { text: "Select a new voice to regenerate this audio:" });
-
-			const listEl = dialog.createEl("div", { cls: "tts-voice-list" });
-
-			for (const voice of voices) {
-				const item = listEl.createEl("div", {
-					cls: "tts-voice-item" + (voice.voice_id === currentVoiceId ? " tts-voice-item-current" : ""),
-				});
-				item.createSpan({ text: voice.name });
-				if (voice.voice_id === currentVoiceId) {
-					item.createSpan({ cls: "tts-voice-badge", text: "current" });
-				}
-				item.addEventListener("click", () => {
-					overlay.remove();
-					resolve(voice);
-				});
-			}
-
-			const btnRow = dialog.createEl("div", { cls: "tts-confirm-buttons" });
-			const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
-			cancelBtn.addEventListener("click", () => {
-				overlay.remove();
-				resolve(null);
-			});
-
-			overlay.addEventListener("click", (e) => {
-				if (e.target === overlay) {
-					overlay.remove();
-					resolve(null);
-				}
-			});
-		});
 	}
 
 	// ─── History ───
@@ -444,55 +468,37 @@ export class TTSPanelView extends ItemView {
 	private renderHistory(): void {
 		this.historyContainerEl.empty();
 		const history = this.plugin.settings.history;
-
 		if (history.length === 0) {
-			this.historyContainerEl.createEl("div", {
-				cls: "tts-history-empty",
-				text: "No history yet.",
-			});
+			this.historyContainerEl.createEl("div", { cls: "tts-history-empty", text: "No history yet." });
 			return;
 		}
-
-		// Show most recent first
 		const sorted = [...history].reverse();
 		for (const entry of sorted) {
 			const itemEl = this.historyContainerEl.createEl("div", {
 				cls: "tts-history-item" + (entry.id === this.currentEntryId ? " tts-history-item-active" : ""),
 			});
-
 			const textPreview = entry.text.length > 80 ? entry.text.substring(0, 80) + "..." : entry.text;
 			itemEl.createEl("div", { cls: "tts-history-text", text: textPreview });
-
 			const metaEl = itemEl.createEl("div", { cls: "tts-history-meta" });
 			metaEl.createSpan({ text: entry.voiceName });
 			metaEl.createSpan({ text: " \u00B7 " });
 			metaEl.createSpan({ text: formatDate(entry.date) });
-
 			const actionsEl = itemEl.createEl("div", { cls: "tts-history-actions" });
 
 			const replayBtn = actionsEl.createEl("button", { cls: "tts-btn-small" });
 			setIcon(replayBtn, "play");
 			replayBtn.title = "Replay";
-			replayBtn.addEventListener("click", (e) => {
-				e.stopPropagation();
-				this.replayFromHistory(entry);
-			});
+			replayBtn.addEventListener("click", (e) => { e.stopPropagation(); this.replayFromHistory(entry); });
 
-			const voiceBtn = actionsEl.createEl("button", { cls: "tts-btn-small" });
-			setIcon(voiceBtn, "repeat");
-			voiceBtn.title = "Change voice";
-			voiceBtn.addEventListener("click", (e) => {
-				e.stopPropagation();
-				this.changeVoiceForEntry(entry);
-			});
+			const regenBtn = actionsEl.createEl("button", { cls: "tts-btn-small" });
+			setIcon(regenBtn, "refresh-cw");
+			regenBtn.title = "Regenerate with selected voice & style";
+			regenBtn.addEventListener("click", (e) => { e.stopPropagation(); this.regenerateEntry(entry); });
 
 			const deleteBtn = actionsEl.createEl("button", { cls: "tts-btn-small tts-btn-danger-small" });
 			setIcon(deleteBtn, "trash-2");
 			deleteBtn.title = "Delete";
-			deleteBtn.addEventListener("click", (e) => {
-				e.stopPropagation();
-				this.confirmDeleteEntry(entry);
-			});
+			deleteBtn.addEventListener("click", (e) => { e.stopPropagation(); this.confirmDeleteEntry(entry); });
 		}
 	}
 
@@ -502,69 +508,47 @@ export class TTSPanelView extends ItemView {
 			`Delete "${entry.text.substring(0, 50)}${entry.text.length > 50 ? "..." : ""}"?\n\nThis will remove the audio file from disk.`
 		);
 		if (!confirmed) return;
-
 		await this.deleteEntry(entry);
 	}
 
 	private async deleteEntry(entry: HistoryEntry): Promise<void> {
-		// Stop playback if this entry is currently playing
 		if (this.currentEntryId === entry.id) {
 			this.stopPlayback();
 			this.textContainerEl.empty();
-			this.statusEl.setText("Select text and run the TTS command to begin.");
+			this.statusEl.setText("Select text and use Cmd+Shift+G to generate.");
 			this.currentEntryId = null;
+			this.regenerateBtn.disabled = true;
 		}
-
-		// Delete audio file from vault
 		try {
 			const file = this.app.vault.getFileByPath(entry.fileName);
-			if (file) {
-				await this.app.vault.delete(file);
-			}
-		} catch {
-			// File may already be deleted, that's OK
-		}
-
-		// Remove from history
+			if (file) await this.app.vault.delete(file);
+		} catch { /* ok */ }
 		this.plugin.settings.history = this.plugin.settings.history.filter((h) => h.id !== entry.id);
 		await this.plugin.saveSettings();
-
 		this.renderHistory();
 		new Notice("Recording deleted.");
 	}
 
 	private async clearAllHistory(): Promise<void> {
-		if (this.plugin.settings.history.length === 0) {
-			new Notice("History is already empty.");
-			return;
-		}
-
+		if (this.plugin.settings.history.length === 0) { new Notice("History is already empty."); return; }
 		const confirmed = await this.showConfirmDialog(
 			"Clear all history",
 			`This will delete all ${this.plugin.settings.history.length} recording(s) and their audio files from disk.\n\nThis cannot be undone.`
 		);
 		if (!confirmed) return;
-
 		this.stopPlayback();
 		this.textContainerEl.empty();
-		this.statusEl.setText("Select text and run the TTS command to begin.");
+		this.statusEl.setText("Select text and use Cmd+Shift+G to generate.");
 		this.currentEntryId = null;
-
-		// Delete all audio files
+		this.regenerateBtn.disabled = true;
 		for (const entry of this.plugin.settings.history) {
 			try {
 				const file = this.app.vault.getFileByPath(entry.fileName);
-				if (file) {
-					await this.app.vault.delete(file);
-				}
-			} catch {
-				// Continue deleting others
-			}
+				if (file) await this.app.vault.delete(file);
+			} catch { /* continue */ }
 		}
-
 		this.plugin.settings.history = [];
 		await this.plugin.saveSettings();
-
 		this.renderHistory();
 		new Notice("All history cleared.");
 	}
@@ -573,33 +557,13 @@ export class TTSPanelView extends ItemView {
 		return new Promise((resolve) => {
 			const overlay = document.body.createEl("div", { cls: "tts-confirm-overlay" });
 			const dialog = overlay.createEl("div", { cls: "tts-confirm-dialog" });
-
 			dialog.createEl("h3", { text: title });
 			dialog.createEl("p", { text: message });
-
 			const btnRow = dialog.createEl("div", { cls: "tts-confirm-buttons" });
-
-			const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
-			cancelBtn.addEventListener("click", () => {
-				overlay.remove();
-				resolve(false);
-			});
-
-			const confirmBtn = btnRow.createEl("button", {
-				cls: "mod-warning",
-				text: "Delete",
-			});
-			confirmBtn.addEventListener("click", () => {
-				overlay.remove();
-				resolve(true);
-			});
-
-			overlay.addEventListener("click", (e) => {
-				if (e.target === overlay) {
-					overlay.remove();
-					resolve(false);
-				}
-			});
+			btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => { overlay.remove(); resolve(false); });
+			const confirmBtn = btnRow.createEl("button", { cls: "mod-warning", text: "Delete" });
+			confirmBtn.addEventListener("click", () => { overlay.remove(); resolve(true); });
+			overlay.addEventListener("click", (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
 		});
 	}
 }
