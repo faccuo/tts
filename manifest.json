@@ -1,0 +1,9 @@
+{
+	"id": "elevenlabs-tts",
+	"name": "ElevenLabs TTS",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Text-to-Speech with ElevenLabs. Select text, listen with word-level highlighting, and manage your audio history.",
+	"author": "fer",
+	"isDesktopOnly": true
+}
