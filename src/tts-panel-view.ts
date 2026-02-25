@@ -88,8 +88,32 @@ export class TTSPanelView extends ItemView {
 
 	// ─── Public API called from main.ts ───
 
+	showGenerating(text: string, voiceName: string): void {
+		this.stopPlayback();
+		this.textContainerEl.empty();
+		this.textContainerEl.addClass("tts-text-loading");
+
+		// Show text with newlines preserved but dimmed
+		this.renderPlainText(text, this.textContainerEl);
+
+		// Loading indicator
+		this.statusEl.empty();
+		const indicator = this.statusEl.createEl("span", { cls: "tts-loading-indicator" });
+		indicator.setText(`Generating with ${voiceName}`);
+
+		this.playBtn.disabled = true;
+		this.stopBtn.disabled = true;
+	}
+
+	showError(message: string): void {
+		this.textContainerEl.removeClass("tts-text-loading");
+		this.statusEl.empty();
+		this.statusEl.createEl("span", { cls: "tts-status-error", text: message });
+	}
+
 	async loadAndPlay(text: string, wordTimings: WordTiming[], fileName: string, entryId: string): Promise<void> {
 		this.stopPlayback();
+		this.textContainerEl.removeClass("tts-text-loading");
 		this.currentWordTimings = wordTimings;
 		this.currentEntryId = entryId;
 
@@ -117,14 +141,40 @@ export class TTSPanelView extends ItemView {
 		}
 	}
 
-	// ─── Render text with clickable words ───
+	// ─── Render text ───
+
+	private renderPlainText(text: string, container: HTMLElement): void {
+		const parts = text.split("\n");
+		for (let i = 0; i < parts.length; i++) {
+			if (i > 0) {
+				container.createEl("br");
+			}
+			const line = parts[i]!;
+			if (line.length > 0) {
+				container.appendText(line);
+			}
+		}
+	}
+
+	private appendTextWithBreaks(text: string, container: HTMLElement): void {
+		const parts = text.split("\n");
+		for (let i = 0; i < parts.length; i++) {
+			if (i > 0) {
+				container.createEl("br");
+			}
+			const line = parts[i]!;
+			if (line.length > 0) {
+				container.appendText(line);
+			}
+		}
+	}
 
 	private renderTextWithWords(text: string, wordTimings: WordTiming[]): void {
 		this.textContainerEl.empty();
 		this.wordSpans = [];
 
 		if (wordTimings.length === 0) {
-			this.textContainerEl.setText(text);
+			this.renderPlainText(text, this.textContainerEl);
 			return;
 		}
 
@@ -132,10 +182,10 @@ export class TTSPanelView extends ItemView {
 		for (let i = 0; i < wordTimings.length; i++) {
 			const wt = wordTimings[i]!;
 
-			// Add spaces/punctuation between words
+			// Add spaces/punctuation/newlines between words
 			if (wt.startIndex > lastEnd) {
 				const between = text.substring(lastEnd, wt.startIndex);
-				this.textContainerEl.appendText(between);
+				this.appendTextWithBreaks(between, this.textContainerEl);
 			}
 
 			const span = this.textContainerEl.createEl("span", {
@@ -159,7 +209,8 @@ export class TTSPanelView extends ItemView {
 
 		// Trailing text
 		if (lastEnd < text.length) {
-			this.textContainerEl.appendText(text.substring(lastEnd));
+			const trailing = text.substring(lastEnd);
+			this.appendTextWithBreaks(trailing, this.textContainerEl);
 		}
 	}
 

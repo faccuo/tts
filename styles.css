@@ -96,6 +96,38 @@
 	border-radius: var(--radius-s);
 }
 
+/* ─── Loading state ─── */
+
+.tts-text-loading {
+	opacity: 0.4;
+	animation: tts-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes tts-pulse {
+	0%, 100% { opacity: 0.4; }
+	50% { opacity: 0.6; }
+}
+
+.tts-loading-indicator {
+	color: var(--text-accent);
+}
+
+.tts-loading-indicator::after {
+	content: "";
+	animation: tts-dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes tts-dots {
+	0% { content: ""; }
+	25% { content: "."; }
+	50% { content: ".."; }
+	75% { content: "..."; }
+}
+
+.tts-status-error {
+	color: var(--text-error);
+}
+
 /* ─── History ─── */
 
 .tts-history-section {

@@ -23,6 +23,7 @@ export default class ElevenLabsTTSPlugin extends Plugin {
 		this.addCommand({
 			id: "elevenlabs-tts-play",
 			name: "Play selected text",
+			hotkeys: [{ modifiers: ["Mod", "Shift"], key: "g" }],
 			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
 				const selection = editor.getSelection();
 				if (!selection || selection.trim().length === 0) {
@@ -84,8 +85,8 @@ export default class ElevenLabsTTSPlugin extends Plugin {
 			return;
 		}
 
-		// Show generating notice
-		new Notice("Generating speech...");
+		// Show loading state in panel
+		panel.showGenerating(text, this.settings.selectedVoiceName);
 
 		try {
 			// Call ElevenLabs API
@@ -126,7 +127,9 @@ export default class ElevenLabsTTSPlugin extends Plugin {
 
 			new Notice("Speech generated successfully.");
 		} catch (e) {
-			new Notice(`TTS failed: ${(e as Error).message}`);
+			const msg = (e as Error).message;
+			panel.showError(`Generation failed: ${msg}`);
+			new Notice(`TTS failed: ${msg}`);
 			console.error("ElevenLabs TTS error:", e);
 		}
 	}
