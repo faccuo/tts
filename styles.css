@@ -305,7 +305,23 @@
 .tts-history-meta {
 	font-size: var(--font-ui-smaller);
 	color: var(--text-faint);
+	margin-bottom: 4px;
+}
+
+.tts-history-tags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
 	margin-bottom: 6px;
+}
+
+.tts-history-tag {
+	font-size: 10px;
+	padding: 1px 6px;
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+	line-height: 1.4;
 }
 
 .tts-history-actions {

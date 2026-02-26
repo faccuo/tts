@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf, Notice, setIcon } from "obsidian";
 import type ElevenLabsTTSPlugin from "./main";
-import { VIEW_TYPE_TTS_PANEL, WordTiming, HistoryEntry, STYLE_PRESETS, StylePresetName } from "./types";
+import { VIEW_TYPE_TTS_PANEL, WordTiming, HistoryEntry, STYLE_PRESETS, StylePresetName, StylePresetValues } from "./types";
 import { fetchVoices } from "./elevenlabs-api";
 
 export class TTSPanelView extends ItemView {
@@ -483,6 +483,19 @@ export class TTSPanelView extends ItemView {
 			metaEl.createSpan({ text: entry.voiceName });
 			metaEl.createSpan({ text: " \u00B7 " });
 			metaEl.createSpan({ text: formatDate(entry.date) });
+
+			// Show generation settings if available
+			if (entry.stylePreset) {
+				const tagsEl = itemEl.createEl("div", { cls: "tts-history-tags" });
+				const presetLabel = STYLE_PRESETS[entry.stylePreset]?.label ?? entry.stylePreset;
+				tagsEl.createSpan({ cls: "tts-history-tag", text: presetLabel });
+				if (entry.styleIntensity != null) {
+					tagsEl.createSpan({ cls: "tts-history-tag", text: `${entry.styleIntensity}%` });
+				}
+				if (entry.speed != null) {
+					tagsEl.createSpan({ cls: "tts-history-tag", text: `${entry.speed.toFixed(2)}x` });
+				}
+			}
 			const actionsEl = itemEl.createEl("div", { cls: "tts-history-actions" });
 
 			const replayBtn = actionsEl.createEl("button", { cls: "tts-btn-small" });

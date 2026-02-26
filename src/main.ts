@@ -121,6 +121,9 @@ export default class ElevenLabsTTSPlugin extends Plugin {
 				date: timestamp,
 				fileName,
 				wordTimings,
+				stylePreset: this.settings.stylePreset,
+				styleIntensity: this.settings.styleIntensity,
+				speed: this.settings.speed,
 			};
 
 			this.settings.history.push(entry);
@@ -189,6 +192,9 @@ export default class ElevenLabsTTSPlugin extends Plugin {
 					date: timestamp,
 					fileName,
 					wordTimings,
+					stylePreset: this.settings.stylePreset,
+					styleIntensity: this.settings.styleIntensity,
+					speed: this.settings.speed,
 				};
 			}
 			await this.saveSettings();

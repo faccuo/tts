@@ -31,6 +31,10 @@ export interface HistoryEntry {
 	date: number;
 	fileName: string;
 	wordTimings: WordTiming[];
+	// Generation settings (optional for backward compat with old entries)
+	stylePreset?: StylePresetName;
+	styleIntensity?: number;
+	speed?: number;
 }
 
 export interface VoiceSettings {
