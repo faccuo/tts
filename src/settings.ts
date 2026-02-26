@@ -29,6 +29,7 @@ export class ElevenLabsTTSSettingTab extends PluginSettingTab {
 					})
 					.onChange(async (value) => {
 						this.plugin.settings.apiKey = value.trim();
+						this.plugin.cachedVoices = [];
 						await this.plugin.saveSettings();
 					})
 			);

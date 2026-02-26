@@ -27,6 +27,10 @@
 	gap: 8px;
 }
 
+.tts-btn-reload {
+	flex-shrink: 0;
+}
+
 .tts-voice-select {
 	flex: 1;
 	padding: 4px 8px;

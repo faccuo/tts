@@ -49,6 +49,9 @@ export class TTSPanelView extends ItemView {
 		voiceRow.createEl("span", { cls: "tts-label", text: "Voice" });
 		this.voiceSelectEl = voiceRow.createEl("select", { cls: "tts-voice-select" });
 		this.voiceSelectEl.addEventListener("change", () => this.onVoiceChanged());
+		const reloadVoicesBtn = voiceRow.createEl("button", { cls: "tts-btn-small tts-btn-reload", title: "Reload voices" });
+		setIcon(reloadVoicesBtn, "refresh-cw");
+		reloadVoicesBtn.addEventListener("click", () => this.reloadVoices());
 
 		// ── Style presets ──
 		const styleSection = container.createEl("div", { cls: "tts-style-section" });
@@ -203,6 +206,11 @@ export class TTSPanelView extends ItemView {
 
 	refreshVoices(): void {
 		this.populateVoiceSelect();
+	}
+
+	private async reloadVoices(): Promise<void> {
+		this.plugin.cachedVoices = [];
+		await this.ensureVoicesLoaded();
 	}
 
 	// ─── Style settings ───
