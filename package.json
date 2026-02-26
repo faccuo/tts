@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-elevenlabs-tts",
-	"version": "1.0.0",
+	"version": "0.0.2",
 	"description": "ElevenLabs Text-to-Speech integration for Obsidian with word-level highlighting",
 	"main": "main.js",
 	"type": "module",
